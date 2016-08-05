@@ -34,10 +34,13 @@ func (rm *RouteManager) Load(persistor RouteStore) error {
 	if err != nil {
 		return err
 	}
+	log.Println("getall end")
 	for _, route := range routes {
 		rm.Add(route)
 	}
+	log.Println("add route end")
 	rm.persistor = persistor
+	log.Println("router manager setup ends")
 	return nil
 }
 
@@ -111,6 +114,9 @@ func (rm *RouteManager) AddFromUri(uri string) error {
 func (rm *RouteManager) Add(route *Route) error {
 	rm.Lock()
 	defer rm.Unlock()
+	if _, ok := rm.routes[route.ID]; ok {
+		return nil//route ID already exists, return
+	}
 	factory, found := AdapterFactories.Lookup(route.AdapterType())
 	if !found {
 		return errors.New("bad adapter: " + route.Adapter)
@@ -200,7 +206,9 @@ func (rm *RouteManager) Setup() error {
 		}
 	}
 
-	persistPath := getopt("ROUTESPATH", "/mnt/routes")
+//	persistPath := getopt("ROUTESPATH", "/mnt/routes")
+	log.Println("persistent start")
+	persistPath := getopt("ROUTESPATH", "/Users/wanglu/projects/routes/")
 	if _, err := os.Stat(persistPath); err == nil {
 		return rm.Load(RouteFileStore(persistPath))
 	}

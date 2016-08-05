@@ -61,6 +61,8 @@ type Route struct {
 	FilterID      string            `json:"filter_id,omitempty"`
 	FilterName    string            `json:"filter_name,omitempty"`
 	FilterSources []string          `json:"filter_sources,omitempty"`
+	/*env value in container, use to filter, the env key can be set by env*/
+	FilterEnv     string            `json:"filter_env,omitempty"`
 	Adapter       string            `json:"adapter"`
 	Address       string            `json:"address"`
 	Options       map[string]string `json:"options,omitempty"`
@@ -106,8 +108,12 @@ func (r *Route) matchAll() bool {
 func (r *Route) MultiContainer() bool {
 	return r.matchAll() || strings.Contains(r.FilterName, "*")
 }
-
-func (r *Route) MatchContainer(id, name string) bool {
+//based on container's ID and name to filter
+func (r *Route) MatchContainer(id, name string, envs []string) bool {
+	topic := getEnv("TOPIC", envs)
+	if topic != r.FilterEnv {
+		return false
+	}
 	if r.matchAll() {
 		return true
 	}
@@ -129,6 +135,16 @@ func (r *Route) MatchMessage(message *Message) bool {
 		return false
 	}
 	return true
+}
+
+func getEnv(env_key string, envs []string) string {
+	for _, env := range envs {
+		if strings.HasPrefix(env, env_key + "=") {
+			topic := strings.Split(env, "=")[1]
+			return topic
+		}
+	}
+	return ""
 }
 
 func contains(strs []string, str string) bool {

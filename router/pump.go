@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"strconv"
 
 	"github.com/fsouza/go-dockerclient"
 )
@@ -145,6 +146,20 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 	id := normalID(event.ID)
 	container, err := p.client.InspectContainer(id)
 	assert(err, "pump")
+	//add route
+	topic_env := getEnv("TOPIC", container.Config.Env)
+	kafka_addr := os.Getenv("KAFKA")
+	//kafka_addr := "localhost:9092"
+	if kafka_addr != "" {
+		route := &Route{
+			ID:        topic_env,
+			Adapter:   "kafka",
+			FilterEnv: topic_env,
+			Address:   kafka_addr + "/" + topic_env,
+		}
+		Routes.Add(route)
+	  log.Println("add route kafka topic:", kafka_addr, topic_env)
+	}
 	if container.Config.Tty {
 		debug("pump.pumpLogs():", id, "ignored: tty enabled")
 		return
@@ -162,7 +177,9 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 	if backlog {
 		sinceTime = time.Unix(0, 0)
 	} else {
-		sinceTime = time.Now()
+		str_sinceTime := os.Getenv("SINCE_TIME")//first read sincetime from file via env
+		int_sinceTime, _ := strconv.ParseInt(str_sinceTime, 10, 64)
+		sinceTime = time.Unix(int_sinceTime, 0)
 	}
 
 	p.mu.Lock()
@@ -173,6 +190,7 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 	}
 	outrd, outwr := io.Pipe()
 	errrd, errwr := io.Pipe()
+	//containerPump use to recieve log from pump
 	p.pumps[id] = newContainerPump(container, outrd, errrd)
 	p.mu.Unlock()
 	p.update(event)
@@ -196,7 +214,6 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 			}
 
 			sinceTime = time.Now()
-
 			container, err := p.client.InspectContainer(id)
 			if err != nil {
 				_, four04 := err.(*docker.NoSuchContainer)
@@ -246,11 +263,13 @@ func (p *LogsPump) Route(route *Route, logstream chan *Message) {
 	for _, pump := range p.pumps {
 		if route.MatchContainer(
 			normalID(pump.container.ID),
-			normalName(pump.container.Name)) {
+			normalName(pump.container.Name),
+			pump.container.Config.Env) {
 
 			pump.add(logstream, route)
 			defer pump.remove(logstream)
 		}
+		//add MatchEnv
 	}
 	updates := make(chan *update)
 	p.routes[updates] = struct{}{}
@@ -267,8 +286,8 @@ func (p *LogsPump) Route(route *Route, logstream chan *Message) {
 			case "start", "restart":
 				if route.MatchContainer(
 					normalID(event.pump.container.ID),
-					normalName(event.pump.container.Name)) {
-
+					normalName(event.pump.container.Name),
+					event.pump.container.Config.Env) {
 					event.pump.add(logstream, route)
 					defer event.pump.remove(logstream)
 				}
