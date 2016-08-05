@@ -34,13 +34,10 @@ func (rm *RouteManager) Load(persistor RouteStore) error {
 	if err != nil {
 		return err
 	}
-	log.Println("getall end")
 	for _, route := range routes {
 		rm.Add(route)
 	}
-	log.Println("add route end")
 	rm.persistor = persistor
-	log.Println("router manager setup ends")
 	return nil
 }
 
@@ -206,9 +203,8 @@ func (rm *RouteManager) Setup() error {
 		}
 	}
 
-//	persistPath := getopt("ROUTESPATH", "/mnt/routes")
-	log.Println("persistent start")
-	persistPath := getopt("ROUTESPATH", "/Users/wanglu/projects/routes/")
+	persistPath := getopt("ROUTESPATH", "/mnt/routes")
+	//persistPath := getopt("ROUTESPATH", "/Users/wanglu/projects/routes/")
 	if _, err := os.Stat(persistPath); err == nil {
 		return rm.Load(RouteFileStore(persistPath))
 	}
