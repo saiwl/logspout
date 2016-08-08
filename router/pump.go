@@ -9,12 +9,16 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"regexp"
 	"strconv"
 
 	"github.com/fsouza/go-dockerclient"
 )
 
+var time_regexp *regexp.Regexp
+
 func init() {
+	time_regexp = regexp.MustCompile(`^(\d{4})[-,/](\d{2})[-,/](\d{2})`)
 	pump := &LogsPump{
 		pumps:  make(map[string]*containerPump),
 		routes: make(map[chan *update]struct{}),
@@ -317,13 +321,25 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 	}
 	pump := func(source string, input io.Reader) {
 		buf := bufio.NewReader(input)
+		var line string
+		line, err := buf.ReadString('\n')//add exception judge,read one line
+		if err != nil {
+			if err != io.EOF {
+				debug("pump.newContainerPump():", normalID(container.ID), source+":", err)
+			}
+			return
+		}
 		for {
-			line, err := buf.ReadString('\n')
+			secline, err := buf.ReadString('\n')//add exception judge,read one line
 			if err != nil {
 				if err != io.EOF {
 					debug("pump.newContainerPump():", normalID(container.ID), source+":", err)
 				}
 				return
+			}
+			if !time_regexp.MatchString(secline) {
+				line = line + secline
+				continue
 			}
 			cp.send(&Message{
 				Data:      strings.TrimSuffix(line, "\n"),
@@ -331,6 +347,7 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 				Time:      time.Now(),
 				Source:    source,
 			})
+			line = secline
 		}
 	}
 	go pump("stdout", stdout)
