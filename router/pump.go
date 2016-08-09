@@ -322,6 +322,7 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 	pump := func(source string, input io.Reader) {
 		buf := bufio.NewReader(input)
 		var line string
+		line_count := 0
 		line, err := buf.ReadString('\n')//add exception judge,read one line
 		if err != nil {
 			if err != io.EOF {
@@ -339,7 +340,10 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 			}
 			if !time_regexp.MatchString(secline) {
 				line = line + secline
-				continue
+				line_count = line_count + 1
+				if line_count < 100{
+					continue
+				}
 			}
 			cp.send(&Message{
 				Data:      strings.TrimSuffix(line, "\n"),
