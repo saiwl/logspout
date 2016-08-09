@@ -157,7 +157,11 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 	kafka_addr := getopt("KAFKA", "localhost:9092")
 	if _, ok := time_regexp_map[topic_env]; !ok {
 		regex_env := getEnv("LOG_TIME_REGEX", container.Config.Env, "^(\\d{4})[-,/](\\d{2})[-,/](\\d{2})")
-		time_regexp_map[topic_env] = regexp.MustCompile(regex_env)
+		time_regexp_map[topic_env], err = regexp.Compile(regex_env)
+		if err != nil {
+			log.Fatal("LOG_TIME_REGEX set wrong:", err)
+			return
+		}
 	}
 	if kafka_addr != "" {
 		route := &Route{
