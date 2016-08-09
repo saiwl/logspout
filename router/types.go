@@ -110,7 +110,7 @@ func (r *Route) MultiContainer() bool {
 }
 //based on container's ID and name to filter
 func (r *Route) MatchContainer(id, name string, envs []string) bool {
-	topic := getEnv("TOPIC", envs)
+	topic := getEnv("TOPIC", envs, "default")
 	if topic != r.FilterEnv {
 		return false
 	}
@@ -137,14 +137,14 @@ func (r *Route) MatchMessage(message *Message) bool {
 	return true
 }
 
-func getEnv(env_key string, envs []string) string {
+func getEnv(env_key string, envs []string, dfault string) string {
 	for _, env := range envs {
 		if strings.HasPrefix(env, env_key + "=") {
 			topic := strings.Split(env, "=")[1]
 			return topic
 		}
 	}
-	return ""
+	return dfault
 }
 
 func contains(strs []string, str string) bool {

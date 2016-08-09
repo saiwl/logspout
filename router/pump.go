@@ -15,10 +15,10 @@ import (
 	"github.com/fsouza/go-dockerclient"
 )
 
-var time_regexp *regexp.Regexp
+var time_regexp_map = make(map[string]*regexp.Regexp)
 
 func init() {
-	time_regexp = regexp.MustCompile(`^(\d{4})[-,/](\d{2})[-,/](\d{2})`)
+	//time_regexp = regexp.MustCompile(`^(\d{4})[-,/](\d{2})[-,/](\d{2})`)
 	pump := &LogsPump{
 		pumps:  make(map[string]*containerPump),
 		routes: make(map[chan *update]struct{}),
@@ -151,9 +151,14 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 	container, err := p.client.InspectContainer(id)
 	assert(err, "pump")
 	//add route
-	topic_env := getEnv("TOPIC", container.Config.Env)
-	kafka_addr := os.Getenv("KAFKA")
-	//kafka_addr := "localhost:9092"
+
+	filter := getopt("FILTER", "TOPIC")
+	topic_env := getEnv(filter, container.Config.Env, "default")
+	kafka_addr := getopt("KAFKA", "localhost:9092")
+	if _, ok := time_regexp_map[topic_env]; !ok {
+		regex_env := getEnv("LOG_TIME_REGEX", container.Config.Env, "^(\\d{4})[-,/](\\d{2})[-,/](\\d{2})")
+		time_regexp_map[topic_env] = regexp.MustCompile(regex_env)
+	}
 	if kafka_addr != "" {
 		route := &Route{
 			ID:        topic_env,
@@ -319,6 +324,9 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 		container:  container,
 		logstreams: make(map[chan *Message]*Route),
 	}
+	filter := getopt("FILTER", "TOPIC")
+	topic_env := getEnv(filter, container.Config.Env, "default")
+	time_regexp, _ := time_regexp_map[topic_env]
 	pump := func(source string, input io.Reader) {
 		buf := bufio.NewReader(input)
 		var line string
@@ -335,7 +343,14 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 			if err != nil {
 				if err != io.EOF {
 					debug("pump.newContainerPump():", normalID(container.ID), source+":", err)
+					return
 				}
+				cp.send(&Message{
+					Data:      strings.TrimSuffix(line, "\n"),
+					Container: container,
+					Time:      time.Now(),
+					Source:    source,
+				})
 				return
 			}
 			if !time_regexp.MatchString(secline) {
