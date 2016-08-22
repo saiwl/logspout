@@ -1,4 +1,9 @@
 # logspout
+new added env:
+
+1. KAFKA,the kafka brokers to write
+2. FILTER, env key to filter the container log. default is 'TOPIC'
+3. LOG_TIME_REGEX, to collect exception logs, user-defined regex to match the head of line. default is "^(\\d{4})[-,/](\\d{2})[-,/](\\d{2})" 
 
 [![CircleCI](https://img.shields.io/circleci/project/gliderlabs/logspout/release.svg)](https://circleci.com/gh/gliderlabs/logspout)
 [![Docker Hub](https://img.shields.io/badge/docker-ready-blue.svg)](https://registry.hub.docker.com/u/gliderlabs/logspout/)
