@@ -53,7 +53,7 @@ func getSinceTime(path string) time.Time {
 
 func persisten_sinceTime() {
 	for{
-		writeSinceTime("sincetime", time.Now())
+		writeSinceTime("/etc/logspout/sincetime", time.Now())
 		time.Sleep(time.Second * 1)
 	}
 }
@@ -63,7 +63,7 @@ func main() {
 		fmt.Println(Version)
 		os.Exit(0)
 	}
-	sinceTime := getSinceTime("sincetime")
+	sinceTime := getSinceTime("/etc/logspout/sincetime")
 	os.Setenv("SINCE_TIME", strconv.FormatInt(sinceTime.Unix(), 10))
 	fmt.Println("#sincetime:", sinceTime.String())
 

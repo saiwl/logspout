@@ -82,6 +82,12 @@ func NewKafkaAdapter(route *router.Route) (router.LogAdapter, error) {
 		}
 	}
 
+	go func() {
+		for err := range producer.Errors() {
+			log.Println("Failed to write log:", err)
+		}
+	}
+
 	KafkaProducerMap[strings.Join(brokers,",")] = producer
 
 	return &KafkaAdapter{
@@ -110,7 +116,7 @@ func (a *KafkaAdapter) Stream(logstream chan *router.Message) {
 func newConfig() *sarama.Config {
 	config := sarama.NewConfig()
 	config.ClientID = "logspout"
-	config.Producer.Return.Errors = false
+	config.Producer.Return.Errors = true
 	config.Producer.Return.Successes = false
 	config.Producer.Flush.Frequency = 1 * time.Second
 	config.Producer.RequiredAcks = sarama.WaitForLocal

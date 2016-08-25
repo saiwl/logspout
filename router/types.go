@@ -110,7 +110,8 @@ func (r *Route) MultiContainer() bool {
 }
 //based on container's ID and name to filter
 func (r *Route) MatchContainer(id, name string, envs []string) bool {
-	topic := getEnv("TOPIC", envs, "default")
+	filter := getopt("FILTER", "TOPIC")
+	topic := getEnv(filter, envs, "default")
 	if topic != r.FilterEnv {
 		return false
 	}
