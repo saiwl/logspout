@@ -1,15 +1,15 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
-	"time"
-	"strings"
-	"io/ioutil"
 	"strconv"
+	"strings"
 	"text/tabwriter"
-	"encoding/binary"
+	"time"
 
 	"github.com/gliderlabs/logspout/router"
 )
@@ -40,6 +40,7 @@ func writeSinceTime(path string, sinceTime time.Time) error {
 }
 
 //get sincetime from file, if file not exists, return time.Now()
+//FIXME:when the sincetime file exists but is empty, can cause panic
 func getSinceTime(path string) time.Time {
 	if _, err := os.Stat(path); err == nil {
 		sinceTime, err := ioutil.ReadFile(path)
@@ -52,7 +53,7 @@ func getSinceTime(path string) time.Time {
 }
 
 func persisten_sinceTime() {
-	for{
+	for {
 		writeSinceTime("/etc/logspout/sincetime", time.Now())
 		time.Sleep(time.Second * 1)
 	}

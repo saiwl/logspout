@@ -2,20 +2,94 @@ package router
 
 import (
 	"bufio"
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"regexp"
-	"strconv"
 
 	"github.com/fsouza/go-dockerclient"
 )
 
+var topic_brokers_map = make(map[string]string)
+
+type ClusterData struct {
+	Brokers    []string `json:"brokers"`
+	Cluster    string   `json:"cluster"`
+	Zookeepers string   `json:"zookeepers"`
+}
+
+type TopicData struct {
+	Zookeepers string `json:"zookeepers"`
+	Topic      string `json:"topic"`
+	Cluster    string `json:"cluster"`
+}
+
 var time_regexp_map = make(map[string]*regexp.Regexp)
+
+const consul_api_prefix = "http://localhost:8500/v1/kv/"
+const franz_api_prefix = "http://localhost:8500/v1/kv/franz/cluster/"
+
+func get_broker_list_from_consul(app string, topic string) (broker_list string, err error) {
+	var cluster ClusterData
+	var topicdata TopicData
+	consul_request_url := fmt.Sprintf("%s%s/kafka/%s?raw", consul_api_prefix, app, topic)
+	log.Println(consul_request_url)
+	err = call_api("GET", consul_request_url, []byte{}, &topicdata)
+	if err != nil {
+		log.Println("call consul api failed:", err)
+		return "localhost:9092", err
+	}
+	franz_request_url := fmt.Sprintf("%s%s?raw", franz_api_prefix, topicdata.Cluster)
+	log.Println(franz_request_url)
+	err = call_api("GET", franz_request_url, []byte{}, &cluster)
+	if err != nil {
+		log.Println("call franz api failed:", err)
+		return "localhost:9092", err
+	}
+	return strings.Join(cluster.Brokers, ","), nil
+}
+
+func call_api(method string, request_url string, params interface{}, response interface{}) error {
+	var req *http.Request
+	var err error
+	//request_url := fmt.Sprintf("%s%s?raw", halo_api_prefix, url)
+	if method == "GET" {
+		req, err = http.NewRequest("GET", request_url, nil)
+	} else {
+		data := []byte{}
+		if params != nil {
+			data, _ = json.Marshal(params)
+		}
+		req, err = http.NewRequest(method, request_url, bytes.NewBuffer(data))
+	}
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if response != nil {
+		err = json.Unmarshal(body, response)
+	}
+	return err
+}
 
 func init() {
 	//time_regexp = regexp.MustCompile(`^(\d{4})[-,/](\d{2})[-,/](\d{2})`)
@@ -147,6 +221,7 @@ func (p *LogsPump) Run() error {
 }
 
 func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
+	var kafka_addr string
 	id := normalID(event.ID)
 	container, err := p.client.InspectContainer(id)
 	assert(err, "pump")
@@ -154,7 +229,19 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 
 	filter := getopt("FILTER", "TOPIC")
 	topic_env := getEnv(filter, container.Config.Env, "default")
-	kafka_addr := getopt("KAFKA", "localhost:9092")
+	if topic_env == "default" {
+		return
+	}
+	app := getEnv("ZHIHU_APP_NAME", container.Config.Env, "app_name")
+	kafka_addr, ok := topic_brokers_map[topic_env]
+	if !ok {
+		kafka_addr, err = get_broker_list_from_consul(app, topic_env)
+		if err != nil {
+			kafka_addr = getopt("KAFKA", "localhost:9092")
+		} else {
+			topic_brokers_map[topic_env] = kafka_addr
+		}
+	}
 	if _, ok := time_regexp_map[topic_env]; !ok {
 		regex_env := getEnv("LOG_TIME_REGEX", container.Config.Env, "^\\[|^(\\d{4})[-,/](\\d{2})[-,/](\\d{2})")
 		time_regexp_map[topic_env], err = regexp.Compile(regex_env)
@@ -163,7 +250,7 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 			return
 		}
 	}
-	if kafka_addr != "" {
+	if kafka_addr != "" && topic_env != "default" {
 		route := &Route{
 			ID:        topic_env,
 			Adapter:   "kafka",
@@ -171,7 +258,7 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 			Address:   kafka_addr + "/" + topic_env,
 		}
 		Routes.Add(route)
-	  log.Println("add route kafka topic:", kafka_addr, topic_env)
+		log.Println("add route kafka topic:", kafka_addr, topic_env)
 	}
 	if container.Config.Tty {
 		debug("pump.pumpLogs():", id, "ignored: tty enabled")
@@ -190,7 +277,7 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 	if backlog {
 		sinceTime = time.Unix(0, 0)
 	} else {
-		str_sinceTime := os.Getenv("SINCE_TIME")//first read sincetime from file via env
+		str_sinceTime := os.Getenv("SINCE_TIME") //first read sincetime from file via env
 		int_sinceTime, _ := strconv.ParseInt(str_sinceTime, 10, 64)
 		sinceTime = time.Unix(int_sinceTime, 0)
 	}
@@ -335,7 +422,7 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 		buf := bufio.NewReader(input)
 		var line string
 		line_count := 0
-		line, err := buf.ReadString('\n')//add exception judge,read one line
+		line, err := buf.ReadString('\n') //add exception judge,read one line
 		if err != nil {
 			if err != io.EOF {
 				debug("pump.newContainerPump():", normalID(container.ID), source+":", err)
@@ -343,7 +430,7 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 			return
 		}
 		for {
-			secline, err := buf.ReadString('\n')//add exception judge,read one line
+			secline, err := buf.ReadString('\n') //add exception judge,read one line
 			if err != nil {
 				if err != io.EOF {
 					debug("pump.newContainerPump():", normalID(container.ID), source+":", err)
@@ -360,7 +447,7 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 			if !time_regexp.MatchString(secline) {
 				line = line + secline
 				line_count = line_count + 1
-				if line_count < 100{
+				if line_count < 100 {
 					continue
 				}
 				line_count = 0

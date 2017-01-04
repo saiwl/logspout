@@ -86,9 +86,9 @@ func NewKafkaAdapter(route *router.Route) (router.LogAdapter, error) {
 		for err := range producer.Errors() {
 			log.Println("Failed to write log:", err)
 		}
-	}
+	}()
 
-	KafkaProducerMap[strings.Join(brokers,",")] = producer
+	KafkaProducerMap[strings.Join(brokers, ",")] = producer
 
 	return &KafkaAdapter{
 		route:    route,
