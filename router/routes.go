@@ -54,9 +54,9 @@ func (rm *RouteManager) Get(id string) (*Route, error) {
 func (rm *RouteManager) GetAll() ([]*Route, error) {
 	log.Println("get all routes")
 	rm.Lock()
+	log.Println("begin to get all routes")
 	defer rm.Unlock()
 	routes := make([]*Route, 0)
-	log.Println("begin to get all routes")
 	for _, route := range rm.routes {
 		routes = append(routes, route)
 	}
@@ -112,10 +112,14 @@ func (rm *RouteManager) AddFromUri(uri string) error {
 
 func (rm *RouteManager) Add(route *Route) error {
 	rm.Lock()
-	defer rm.Unlock()
+	//defer rm.Unlock()
+	//logstream := make(chan *Message)
 	if _, ok := rm.routes[route.ID]; ok {
+		rm.Unlock()
+		//rm.Route(route, logstream)
 		return nil//route ID already exists, return
 	}
+	rm.Unlock()
 	factory, found := AdapterFactories.Lookup(route.AdapterType())
 	if !found {
 		return errors.New("bad adapter: " + route.Adapter)
@@ -131,13 +135,16 @@ func (rm *RouteManager) Add(route *Route) error {
 	}
 	route.closer = make(chan bool)
 	route.adapter = adapter
+	rm.Lock()
 	rm.routes[route.ID] = route
 	if rm.persistor != nil {
 		if err := rm.persistor.Add(route); err != nil {
 			log.Println("persistor:", err)
 		}
 	}
+	rm.Unlock()
 	if rm.routing {
+		//go rm.route(route, logstream)
 		go rm.route(route)
 	}
 	return nil
@@ -146,7 +153,9 @@ func (rm *RouteManager) Add(route *Route) error {
 func (rm *RouteManager) route(route *Route) {
 	logstream := make(chan *Message)
 	defer route.Close()
+	//rm.Route(route, stream)
 	rm.Route(route, logstream)
+	//route.adapter.Stream(stream)
 	route.adapter.Stream(logstream)
 }
 
@@ -167,9 +176,11 @@ func (rm *RouteManager) RoutingFrom(containerID string) bool {
 
 func (rm *RouteManager) Run() error {
 	rm.Lock()
+	//logstream := make(chan *Message)
 	for _, route := range rm.routes {
 		rm.wg.Add(1)
 		go func(route *Route) {
+			//rm.route(route, logstream)
 			rm.route(route)
 			rm.wg.Done()
 		}(route)

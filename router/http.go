@@ -7,7 +7,7 @@ import (
 )
 
 func init() {
-	port := getopt("PORT", getopt("HTTP_PORT", "80"))
+	port := getopt("PORT", getopt("HTTP_PORT", "8888"))
 	Jobs.Register(&httpService{port}, "http")
 }
 
