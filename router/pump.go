@@ -243,7 +243,7 @@ func (p *LogsPump) pumpLogs(event *docker.APIEvents, backlog bool) {
 		}
 	}
 	if _, ok := time_regexp_map[topic_env]; !ok {
-		regex_env := getEnv("LOG_TIME_REGEX", container.Config.Env, "^\\[|^(\\d{4})[-,/](\\d{2})[-,/](\\d{2})")
+		regex_env := getEnv("LOG_TIME_REGEX", container.Config.Env, "^\\[[A-Z]|^(\\d{4})[-,/](\\d{2})[-,/](\\d{2})")
 		time_regexp_map[topic_env], err = regexp.Compile(regex_env)
 		if err != nil {
 			log.Fatal("LOG_TIME_REGEX set wrong:", err)
@@ -422,6 +422,7 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 		buf := bufio.NewReader(input)
 		var line string
 		line_count := 0
+		maxable := false
 		line, err := buf.ReadString('\n') //add exception judge,read one line
 		if err != nil {
 			if err != io.EOF {
@@ -445,12 +446,24 @@ func newContainerPump(container *docker.Container, stdout, stderr io.Reader) *co
 				return
 			}
 			if !time_regexp.MatchString(secline) {
-				line = line + secline
-				line_count = line_count + 1
-				if line_count < 100 {
+				if maxable { //already maxable, drop all the left timeless, line is timeless now
+					line = secline
 					continue
 				}
+				if line_count < 10000 {
+					line = line + secline
+					line_count = line_count + 1
+					continue
+				}
+				maxable = true //if timeless line exceed 10000, drop the left timeless lines
 				line_count = 0
+			} else {
+				if maxable {
+					//if maxable == true, then the line is timeless, drop it
+					line = secline // line is good
+					maxable = false
+					continue
+				}
 			}
 			cp.send(&Message{
 				Data:      strings.TrimSuffix(line, "\n"),
